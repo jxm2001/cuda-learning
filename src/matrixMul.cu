@@ -1,5 +1,6 @@
 #include "helper.h"
 #include "matrixMul.h"
+#include "matrixTranspose.h"
 
 #define A(i,j) A[(i)*lda+(j)]
 #define B(i,j) B[(i)*ldb+(j)]
@@ -121,54 +122,120 @@ namespace matrixMul_2_2 {
     }
 }
 namespace matrixMul_3 {
-    constexpr int  TILE = 1 << 7, TILE_K = 1 << 3, num = 1 << 2;
-    __global__ void matrixMul(value_t* A, value_t* B, value_t* C, int lda, int ldb, int ldc) {
-        __shared__ float4 shmemA[TILE_K][TILE >> 2], shmemB[TILE_K][TILE >> 2];
+    constexpr int  TILE = 1 << 7, TILE_K = 1 << 3, num = 1 << 2, HTILE = TILE >> 1;
+    __global__ void matrixMul(value_t* A, value_t* B, value_t* C, int lda, int ldb, int ldc, int K) {
+        __shared__ value_t shmemA[TILE_K][TILE], shmemB[TILE_K][TILE];
         int bx = blockIdx.x * TILE, by = blockIdx.y * TILE;
         int tx = threadIdx.x * num, ty = threadIdx.y * num, tid = threadIdx.y * blockDim.x + threadIdx.x;
-        int shax = tid % TILE_K, shay = tid / TILE_K;
-        int shbx = tid % TILE, shby = tid / TILE;
-        A = A + by * lda;
+        int sx = tid % 32 * 4, sy = tid / 32;
+        A = A + by;
         B = B + bx;
         C = C + by * ldc + bx;
-        float4 regA;
-        float4 regB;
-        float sum[num][num] = {};
-        float* pa = (float*)shmemA, * pb = (float*)shmemB;
-        for (int i = 0; i < lda; i += TILE_K) {
-            pa[shax * TILE + shay] = A(shay, shax + i);
-            pb[shby * TILE + shbx] = B(shby + i, shbx);
+        value_t regA[2][num];
+        value_t regB[2][num];
+        value_t sum[2][2][num][num] = {};
+        for (int i = 0; i < K; i += TILE_K) {
+            for (int j = 0; j < 4; j++) {
+                shmemA[sy][sx + j] = A(sy + i, sx + j);
+                shmemB[sy][sx + j] = B(sy + i, sx + j);
+            }
             __syncthreads();
             for (int j = 0; j < TILE_K; j++) {
-                regA = shmemA[j][ty >> 2];
-                regB = shmemB[j][tx >> 2];
-                sum[0][0] += regA.x * regB.x;
-                sum[0][1] += regA.x * regB.y;
-                sum[0][2] += regA.x * regB.z;
-                sum[0][3] += regA.x * regB.w;
-                sum[1][0] += regA.y * regB.x;
-                sum[1][1] += regA.y * regB.y;
-                sum[1][2] += regA.y * regB.z;
-                sum[1][3] += regA.y * regB.w;
-                sum[2][0] += regA.z * regB.x;
-                sum[2][1] += regA.z * regB.y;
-                sum[2][2] += regA.z * regB.z;
-                sum[2][3] += regA.z * regB.w;
-                sum[3][0] += regA.w * regB.x;
-                sum[3][1] += regA.w * regB.y;
-                sum[3][2] += regA.w * regB.z;
-                sum[3][3] += regA.w * regB.w;
+                for (int k = 0; k < num; k++) {
+                    regA[0][k] = shmemA[j][ty + k];
+                    regB[0][k] = shmemB[j][tx + k];
+                    regA[1][k] = shmemA[j][ty + HTILE + k];
+                    regB[1][k] = shmemB[j][tx + HTILE + k];
+                }
+                for (int d1 = 0; d1 < 2; d1++) {
+                    for (int d2 = 0; d2 < 2; d2++) {
+                        for (int k1 = 0; k1 < num; k1++) {
+                            for (int k2 = 0; k2 < num; k2++) {
+                                sum[d1][d2][k1][k2] += regA[d1][k1] * regB[d2][k2];
+                            }
+                        }
+                    }
+                }
             }
             __syncthreads();
         }
-        for (int k1 = 0; k1 < num; k1++) {
-            for (int k2 = 0; k2 < num; k2++) {
-                C(ty + k1, tx + k2) = sum[k1][k2];
+        for (int d1 = 0; d1 < 2; d1++) {
+            for (int d2 = 0; d2 < 2; d2++) {
+                for (int k1 = 0; k1 < num; k1++) {
+                    for (int k2 = 0; k2 < num; k2++) {
+                        C(ty + k1 + d1 * HTILE, tx + k2 + d2 * HTILE) = sum[d1][d2][k1][k2];
+                    }
+                }
             }
         }
     }
     void launch(value_t* dev_a, value_t* dev_b, value_t* dev_c, int N, int M, int K) {
-        matrixMul << <dim3(M / TILE, N / TILE), dim3(TILE / num, TILE / num) >> > (dev_a, dev_b, dev_c, K, M, M);
+        value_t* dev_temp;
+        cudaMalloc(&dev_temp, N * K * sizeof(value_t));
+        matrixTranspos(dev_a, dev_temp, K, N);
+        matrixMul << <dim3(M / TILE, N / TILE), dim3(TILE / num / 2, TILE / num / 2) >> > (dev_temp, dev_b, dev_c, N, M, M, K);
+        cudaFree(dev_temp);
+    }
+}
+namespace matrixMul_4 {
+    constexpr int  TILE = 1 << 7, TILE_K = 1 << 3, num = 1 << 2, HTILE = TILE >> 1;
+    __global__ void matrixMul(value_t* A, value_t* B, value_t* C, int lda, int ldb, int ldc, int K) {
+        __shared__ float4 shmemA[TILE_K][TILE >> 2], shmemB[TILE_K][TILE >> 2];
+        int bx = blockIdx.x * TILE, by = blockIdx.y * TILE;
+        int tx = threadIdx.x, ty = threadIdx.y, tid = threadIdx.y * blockDim.x + threadIdx.x;
+        int sx = tid % 32, sy = tid / 32;
+        A = A + by;
+        B = B + bx;
+        C = C + by * ldc + bx;
+        float4 regA[2];
+        float4 regB[2];
+        float4 sum[2][2][num] = {};
+        for (int i = 0; i < K; i += TILE_K) {
+            shmemA[sy][sx] = *(float4*)(&A(sy + i, sx << 2));
+            shmemB[sy][sx] = *(float4*)(&B(sy + i, sx << 2));
+            __syncthreads();
+            for (int j = 0; j < TILE_K; j++) {
+                regA[0] = shmemA[j][ty];
+                regB[0] = shmemB[j][tx];
+                regA[1] = shmemA[j][ty + HTILE / 4];
+                regB[1] = shmemB[j][tx + HTILE / 4];
+                for (int d1 = 0; d1 < 2; d1++) {
+                    for (int d2 = 0; d2 < 2; d2++) {
+                        sum[d1][d2][0].x += regA[d1].x * regB[d2].x;
+                        sum[d1][d2][0].y += regA[d1].x * regB[d2].y;
+                        sum[d1][d2][0].z += regA[d1].x * regB[d2].z;
+                        sum[d1][d2][0].w += regA[d1].x * regB[d2].w;
+                        sum[d1][d2][1].x += regA[d1].y * regB[d2].x;
+                        sum[d1][d2][1].y += regA[d1].y * regB[d2].y;
+                        sum[d1][d2][1].z += regA[d1].y * regB[d2].z;
+                        sum[d1][d2][1].w += regA[d1].y * regB[d2].w;
+                        sum[d1][d2][2].x += regA[d1].z * regB[d2].x;
+                        sum[d1][d2][2].y += regA[d1].z * regB[d2].y;
+                        sum[d1][d2][2].z += regA[d1].z * regB[d2].z;
+                        sum[d1][d2][2].w += regA[d1].z * regB[d2].w;
+                        sum[d1][d2][3].x += regA[d1].w * regB[d2].x;
+                        sum[d1][d2][3].y += regA[d1].w * regB[d2].y;
+                        sum[d1][d2][3].z += regA[d1].w * regB[d2].z;
+                        sum[d1][d2][3].w += regA[d1].w * regB[d2].w;
+                    }
+                }
+            }
+            __syncthreads();
+        }
+        for (int d1 = 0; d1 < 2; d1++) {
+            for (int d2 = 0; d2 < 2; d2++) {
+                for (int k = 0; k < num; k++) {
+                    *(float4*)(&C(ty * 4 + k + d1 * HTILE, tx * 4 + d2 * HTILE)) = sum[d1][d2][k];
+                }
+            }
+        }
+    }
+    void launch(value_t* dev_a, value_t* dev_b, value_t* dev_c, int N, int M, int K) {
+        value_t* dev_temp;
+        cudaMalloc(&dev_temp, N * K * sizeof(value_t));
+        matrixTranspos(dev_a, dev_temp, K, N);
+        matrixMul << <dim3(M / TILE, N / TILE), dim3(TILE / num / 2, TILE / num / 2) >> > (dev_temp, dev_b, dev_c, N, M, M, K);
+        cudaFree(dev_temp);
     }
 }
 void testMatrixMul()
@@ -198,12 +265,14 @@ void testMatrixMul()
     cublasCreate(&handle);
     cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, M, N, K, &alpha, dev_b, M, dev_a, K, &beta, dev_c, M); CUERR;
     TIMERSTOP(matrixMul_std);
+    std::cout << 2.0 * N * M * K * 1000 / timematrixMul_std / 1024 / 1024 / 1024 << " GFLOPS" << std::endl;
     cudaMemcpy(host_std, dev_c, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
 
     TIMERSTART(matrixMul_1);
     cudaMemset(dev_c, 0, N * M * sizeof(value_t));
     matrixMul_1::launch(dev_a, dev_b, dev_c, N, M, K); CUERR;
     TIMERSTOP(matrixMul_1);
+    std::cout << 2.0 * N * M * K * 1000 / timematrixMul_1 / 1024 / 1024 / 1024 << " GFLOPS" << std::endl;
     cudaMemcpy(host_c, dev_c, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_std, host_c, N * M, eps);
 
@@ -211,6 +280,7 @@ void testMatrixMul()
     cudaMemset(dev_c, 0, N * M * sizeof(value_t));
     matrixMul_2_1::launch(dev_a, dev_b, dev_c, N, M, K); CUERR;
     TIMERSTOP(matrixMul_2_1);
+    std::cout << 2.0 * N * M * K * 1000 / timematrixMul_2_1 / 1024 / 1024 / 1024 << " GFLOPS" << std::endl;
     cudaMemcpy(host_c, dev_c, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_std, host_c, N * M, eps);
 
@@ -218,6 +288,7 @@ void testMatrixMul()
     cudaMemset(dev_c, 0, N * M * sizeof(value_t));
     matrixMul_2_2::launch(dev_a, dev_b, dev_c, N, M, K); CUERR;
     TIMERSTOP(matrixMul_2_2);
+    std::cout << 2.0 * N * M * K * 1000 / timematrixMul_2_2 / 1024 / 1024 / 1024 << " GFLOPS" << std::endl;
     cudaMemcpy(host_c, dev_c, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_std, host_c, N * M, eps);
 
@@ -225,6 +296,15 @@ void testMatrixMul()
     cudaMemset(dev_c, 0, N * M * sizeof(value_t));
     matrixMul_3::launch(dev_a, dev_b, dev_c, N, M, K); CUERR;
     TIMERSTOP(matrixMul_3);
+    std::cout << 2.0 * N * M * K * 1000 / timematrixMul_3 / 1024 / 1024 / 1024 << " GFLOPS" << std::endl;
+    cudaMemcpy(host_c, dev_c, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
+    compareData(host_std, host_c, N * M, eps);
+
+    TIMERSTART(matrixMul_4);
+    cudaMemset(dev_c, 0, N * M * sizeof(value_t));
+    matrixMul_4::launch(dev_a, dev_b, dev_c, N, M, K); CUERR;
+    TIMERSTOP(matrixMul_4);
+    std::cout << 2.0 * N * M * K * 1000 / timematrixMul_4 / 1024 / 1024 / 1024 << " GFLOPS" << std::endl;
     cudaMemcpy(host_c, dev_c, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_std, host_c, N * M, eps);
 
@@ -236,5 +316,5 @@ void testMatrixMul()
     cudaFree(dev_c);
 }
 void matrixMul(value_t* dev_a, value_t* dev_b, value_t* dev_c, int N, int M, int K) {
-    matrixMul_3::launch(dev_a, dev_b, dev_c, N, M, K);
+    matrixMul_4::launch(dev_a, dev_b, dev_c, N, M, K);
 }

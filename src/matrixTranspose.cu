@@ -93,6 +93,7 @@ void testMatrixTranspose() {
 	TIMERSTART(matrixCopy_1);
     matrixCopy_1 << <gridDim, blockDim >> > (dev_a, dev_b, N, N);
 	TIMERSTOP(matrixCopy_1);
+    std::cout << 2.0 * N * M * 1000 * sizeof(value_t) / timematrixCopy_1 / 1024 / 1024 / 1024 << "GB/s" << std::endl;
     cudaMemcpy(host_b, dev_b, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_a, host_b, N * M, eps);
 
@@ -100,6 +101,7 @@ void testMatrixTranspose() {
     TIMERSTART(matrixCopy_2);
     matrixCopy_2 << <gridDim, blockDim >> > (dev_a, dev_b, N, N);
     TIMERSTOP(matrixCopy_2);
+    std::cout << 2.0 * N * M * 1000 * sizeof(value_t) / timematrixCopy_2 / 1024 / 1024 / 1024 << "GB/s" << std::endl;
     cudaMemcpy(host_b, dev_b, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_a, host_b, N * M, eps);
 
@@ -107,6 +109,7 @@ void testMatrixTranspose() {
     TIMERSTART(matrixTranspos_1);
     matrixTranspos_1 << <gridDim, blockDim >> > (dev_a, dev_b, N, M);
     TIMERSTOP(matrixTranspos_1);
+    std::cout << 2.0 * N * M * 1000 * sizeof(value_t) / timematrixTranspos_1 / 1024 / 1024 / 1024 << "GB/s" << std::endl;
     cudaMemcpy(host_b, dev_b, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_std, host_b, N * M, eps);
 
@@ -114,6 +117,7 @@ void testMatrixTranspose() {
     TIMERSTART(matrixTranspos_2);
     matrixTranspos_2 << <gridDim, blockDim >> > (dev_a, dev_b, N, M);
     TIMERSTOP(matrixTranspos_2);
+    std::cout << 2.0 * N * M * 1000 * sizeof(value_t) / timematrixTranspos_2 / 1024 / 1024 / 1024 << "GB/s" << std::endl;
     cudaMemcpy(host_b, dev_b, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_std, host_b, N * M, eps);
 
@@ -121,6 +125,7 @@ void testMatrixTranspose() {
     TIMERSTART(matrixTranspos_3);
     matrixTranspos_3 << <gridDim, blockDim >> > (dev_a, dev_b, N, M);
     TIMERSTOP(matrixTranspos_3);
+    std::cout << 2.0 * N * M * 1000 * sizeof(value_t) / timematrixTranspos_3 / 1024 / 1024 / 1024 << "GB/s" << std::endl;
     cudaMemcpy(host_b, dev_b, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_std, host_b, N * M, eps);
 
@@ -128,6 +133,7 @@ void testMatrixTranspose() {
     TIMERSTART(matrixTranspos_4);
     matrixTranspos_4 << <gridDim, blockDim >> > (dev_a, dev_b, N, M);
     TIMERSTOP(matrixTranspos_4);
+    std::cout << 2.0 * N * M * 1000 * sizeof(value_t) / timematrixTranspos_4 / 1024 / 1024 / 1024 << "GB/s" << std::endl;
     cudaMemcpy(host_b, dev_b, N * M * sizeof(value_t), cudaMemcpyDeviceToHost);
     compareData(host_std, host_b, N * M, eps);
 
