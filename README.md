@@ -1,19 +1,21 @@
 ## 实验环境
 
-NVIDIA GeForce RTX 3060 Laptop GPU
+device1: NVIDIA GeForce RTX 3060 Laptop GPU
+
+device2: NVIDIA Tesla V100(大概？)
 
 ## 矩阵转置
 
 $N=4096$ 矩阵转置
 
-| 测试用例                       | Bandwidth(GB/s) |
-| ------------------------------ | --------------- |
-| matrixCopy_1(普通矩阵复制)     | 121.226         |
-| matrixCopy_2(共享内存矩阵复制) | 124.055         |
-| matrixTranspos_1               | 34.829          |
-| matrixTranspos_2               | 106.714         |
-| matrixTranspos_3               | 121.827         |
-| matrixTranspos_4               | 120.981         |
+| 测试用例                       | device1 Bandwidth(GB/s) | device2 Bandwidth(GB/s) |
+| ------------------------------ | ----------------------- | ----------------------- |
+| matrixCopy_1(普通矩阵复制)     | 245.614                 | 990.83                  |
+| matrixCopy_2(共享内存矩阵复制) | 244.875                 | 1185.15                 |
+| matrixTranspos_1               | 69.4963                 | 140.246                 |
+| matrixTranspos_2               | 212.875                 | 473.141                 |
+| matrixTranspos_3               | 232.529                 | 1130.28                 |
+| matrixTranspos_4               | 242.015                 | 1134.48                 |
 
 ### matrixTranspos_1
 
@@ -90,16 +92,14 @@ __global__ void  matrixTranspos_4(value_t* A, value_t* B, int lda, int ldb) {
 
 ## 矩阵乘法
 
-$N=4096$ 矩阵乘法
-
-| 测试用例      | GFLOPS  |
-| ------------- | ------- |
-| cublasSgemm   | 2301.9  |
-| matrixMuls_1  | 304.14  |
-| matrixMul_2_1 | 1096.04 |
-| matrixMul_2_2 | 1694.55 |
-| matrixMul_3   | 2063.63 |
-| matrixMul_4   | 2245.22 |
+| 测试用例      | device1 GFLOPS(N=4096) | device2 GFLOPS(N=8192) |
+| ------------- | ---------------------- | ---------------------- |
+| cublasSgemm   | 4718.23                | 16250.4                |
+| matrixMuls_1  | 616.062                | 3843.91                |
+| matrixMul_2_1 | 2197.92                | 10496.1                |
+| matrixMul_2_2 | 3381.44                | 10801.3                |
+| matrixMul_3   | 4264.97                | 14595.6                |
+| matrixMul_4   | 4487.61                | 15110.9                |
 
 ### matrixMul_1
 
@@ -190,8 +190,6 @@ namespace matrixMul_2_1 {
 在 matrixMul_1 的基础上每个线程计算 $4\times 4$ 个元素块
 
 即每个线程在线程块中计算 $C(ty\times 4+k_1, tx\times 4 + k_2)(0\le k_1,k_2\lt 4)$，提高了计算访存比
-
-但我不能理解相同计算访存比的情况下为什么 matrixMul_2_2 的性能明显高于 matrixMul_2_1 
 
 ```c++
 namespace matrixMul_2_2 {

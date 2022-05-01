@@ -22,7 +22,8 @@
         if(T>=2) time##label += time2##label;						        \
         std::cout<< #label << " run case " << T << std::endl;               \
     }                                                                       \
-    std::cout << "TIMING: " << time##label / 2 << " ms (" << #label << ")" << std::endl;
+    time##label /= 2;                                                       \
+    std::cout << "TIMING: " << time##label << " ms (" << #label << ")" << std::endl;
 
 #define CUERR {                                                            \
         cudaError_t err;                                                       \
