@@ -178,7 +178,7 @@ namespace matrixMul_3 {
     }
 }
 namespace matrixMul_4 {
-    constexpr int  TILE = 1 << 7, TILE_K = 1 << 3, num = 1 << 2, HTILE = TILE >> 1;
+    constexpr int  TILE = 1 << 7, TILE_K = 1 << 4, num = 1 << 2, HTILE = TILE >> 1;
     __global__ void matrixMul(value_t* A, value_t* B, value_t* C, int lda, int ldb, int ldc, int K) {
         __shared__ float4 shmemA[TILE_K][TILE >> 2], shmemB[TILE_K][TILE >> 2];
         int bx = blockIdx.x * TILE, by = blockIdx.y * TILE;
@@ -193,6 +193,8 @@ namespace matrixMul_4 {
         for (int i = 0; i < K; i += TILE_K) {
             shmemA[sy][sx] = *(float4*)(&A(sy + i, sx << 2));
             shmemB[sy][sx] = *(float4*)(&B(sy + i, sx << 2));
+            shmemA[sy + TILE_K / 2][sx] = *(float4*)(&A(sy + i + TILE_K / 2, sx << 2));
+            shmemB[sy + TILE_K / 2][sx] = *(float4*)(&B(sy + i + TILE_K / 2, sx << 2));
             __syncthreads();
             for (int j = 0; j < TILE_K; j++) {
                 regA[0] = shmemA[j][ty];

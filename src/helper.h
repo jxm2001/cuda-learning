@@ -8,7 +8,7 @@
 
 #define TIMERSTART(label)                                                  \
     float time##label = 0.0;											    \
-	for(int T=0;T<4;T++){												    \
+	for(int T=0;T<20;T++){												    \
         cudaEvent_t start##label, stop##label;                                 \
         float time2##label;                                                     \
         cudaEventCreate(&start##label);                                        \
@@ -19,10 +19,10 @@
         cudaEventRecord(stop##label, 0);                                   \
         cudaEventSynchronize(stop##label);                                 \
         cudaEventElapsedTime(&time2##label, start##label, stop##label);     \
-        if(T>=2) time##label += time2##label;						        \
+        if(T>=10) time##label += time2##label;						        \
         std::cout<< #label << " run case " << T << std::endl;               \
     }                                                                       \
-    time##label /= 2;                                                       \
+    time##label /= 10;                                                       \
     std::cout << "TIMING: " << time##label << " ms (" << #label << ")" << std::endl;
 
 #define CUERR {                                                            \

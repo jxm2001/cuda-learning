@@ -99,7 +99,7 @@ __global__ void  matrixTranspos_4(value_t* A, value_t* B, int lda, int ldb) {
 | matrixMul_2_1 | 2197.92                | 10496.1                |
 | matrixMul_2_2 | 3381.44                | 10801.3                |
 | matrixMul_3   | 4264.97                | 14595.6                |
-| matrixMul_4   | 4487.61                | 15110.9                |
+| matrixMul_4   | 4629.21                | 15816.1                |
 
 ### matrixMul_1
 
@@ -302,11 +302,11 @@ namespace matrixMul_3 {
 
 ### matrixMul_4
 
-在 matrixMul_3 的基础上使用了向量化加载
+在 matrixMul_3 的基础上使用了向量化加载，顺便用 Nsight Computer 分析了一下，发现 Wrap Occupancy 主要受寄存器个数制约，两倍共享内存也不会影响 Wrap Occupancy，于是将 TILE_K 加倍，进一步减少全局内存读取/共享内存写入的比值。
 
 ```c++
 namespace matrixMul_4 {
-    constexpr int  TILE = 1 << 7, TILE_K = 1 << 3, num = 1 << 2, HTILE = TILE >> 1;
+    constexpr int  TILE = 1 << 7, TILE_K = 1 << 4, num = 1 << 2, HTILE = TILE >> 1;
     __global__ void matrixMul(value_t* A, value_t* B, value_t* C, int lda, int ldb, int ldc, int K) {
         __shared__ float4 shmemA[TILE_K][TILE >> 2], shmemB[TILE_K][TILE >> 2];
         int bx = blockIdx.x * TILE, by = blockIdx.y * TILE;
@@ -321,6 +321,8 @@ namespace matrixMul_4 {
         for (int i = 0; i < K; i += TILE_K) {
             shmemA[sy][sx] = *(float4*)(&A(sy + i, sx << 2));
             shmemB[sy][sx] = *(float4*)(&B(sy + i, sx << 2));
+            shmemA[sy + TILE_K / 2][sx] = *(float4*)(&A(sy + i + TILE_K / 2, sx << 2));
+            shmemB[sy + TILE_K / 2][sx] = *(float4*)(&B(sy + i + TILE_K / 2, sx << 2));
             __syncthreads();
             for (int j = 0; j < TILE_K; j++) {
                 regA[0] = shmemA[j][ty];
