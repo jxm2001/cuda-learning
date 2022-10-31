@@ -103,7 +103,7 @@ __global__ void  matrixTranspos_4(value_t* A, value_t* B, int lda, int ldb) {
 
 ### matrixMul_1
 
-每个线程块负责计算 $128\times 128$ 个元素，线程块中每个线程计算一个元素
+每个线程块负责计算 $32\times 32$ 个元素，线程块中每个线程计算一个元素
 
 消除了非 coalesced 访存和 bank conflicts 
 
